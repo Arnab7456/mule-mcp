@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" 
+      xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:mcp="http://www.mulesoft.org/schema/mule/mcp" 
+      xmlns="http://www.mulesoft.org/schema/mule/core" 
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/mcp http://www.mulesoft.org/schema/mule/mcp/current/mule-mcp.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    <configuration-properties file="config.properties" doc:name="Configuration properties" />
+
+    <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="5586f701-9bbb-40cf-8e92-e1445cf9d213">
+        <http:listener-connection host="0.0.0.0" port="8081"/>
+    </http:listener-config>
+
+    <mcp:server-config name="MCP_Server" doc:name="MCP Server" doc:id="45e55937-3632-44d2-b73a-33cb51e4e8da" serverName="base-mcp1" serverVersion="1.00">
+        <mcp:streamable-http-server-connection listenerConfig="HTTP_Listener_config" responseContentType="JSON"/>
+    </mcp:server-config>
+
+    <salesforce:sfdc-config name="Salesforce_Config" doc:name="Salesforce Config" doc:id="374e8722-abde-4092-a466-0c34986c55bf" >
+		<salesforce:basic-connection username="${salesforce.username}" password="${salesforce.password}" token="${salesforce.token}" url="https://login.salesforce.com/services/Soap/u/64.0" />
+	</salesforce:sfdc-config>
+	<flow name="test-mcp1Flow" doc:id="86d2c8aa-f026-45a1-bd84-8c534d59e5d9">
+        <mcp:tool-listener 
+            doc:name="MCP Server - Tool Listener" 
+            doc:id="cb80489c-5a5c-467e-b79f-160c2e9bb1f4" 
+            config-ref="MCP_Server" 
+            name="get_product_inventory">
+            <mcp:description><![CDATA[Checks Salesforce for product stock info by product name]]></mcp:description>
+            <mcp:parameters-schema><![CDATA[{
+                "type": "object",
+                "properties": {
+                    "productName": {
+                        "type": "string",
+                        "description": "Name of the product to look up"
+                    }
+                },
+                "required": ["productName"]
+            }]]></mcp:parameters-schema>
+            <mcp:responses>
+                <mcp:text-tool-response-content text="#[payload]"/>
+            </mcp:responses>
+        </mcp:tool-listener>
+
+        <logger 
+            level="INFO" 
+            doc:name="Logger" 
+            doc:id="479aea7d-1cdf-4b27-a39c-2bd364fad050"
+            message="#['AI asked for product: ' ++ payload.productName]"/>
+
+<set-variable value="#[payload.productName]" doc:name="Set Variable" doc:id="1e59dabd-598e-4e0c-8631-c9224effd038" variableName="productName"/>
+		<salesforce:query doc:name="Query" doc:id="c7bdd286-ec7d-45e8-a226-794966c3d573" config-ref="Salesforce_Config" >
+			<salesforce:salesforce-query ><![CDATA[SELECT Name, ProductCode, Description FROM Product2 WHERE Name = ':productName']]></salesforce:salesforce-query>
+			<salesforce:parameters ><![CDATA[#[{ "productName": vars.productName }]]]></salesforce:parameters>
+		</salesforce:query>
+		<set-payload
+    doc:name="Set Payload"
+    doc:id="2ceaec0c-7547-43e1-bc7d-b0abc719beb1"
+     value="#[%dw 2.0
+output text/plain
+---
+if (!isEmpty(payload))
+    'Product: ' ++ (payload[0].Name default 'N/A') ++ 
+    ' | Code: ' ++ (payload[0].ProductCode default 'N/A') ++ 
+    ' | Description: ' ++ (payload[0].Description default 'No description')
+else 
+    'Product not found in Salesforce']"
+    mimeType="text/plain"/>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="6a4d6fba-8c78-452f-bf11-d190177eb4cd" type="ANY">
+				<ee:transform doc:name="Transform Message" doc:id="024a71b7-5739-4b7e-96fa-58fe0936fbfb" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"message" : "salesforce "
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+    
+</flow>
+
+
+</mule>
